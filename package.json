@@ -1,8 +1,8 @@
 {
   "name": "extensions-generic-0.8",
   "version": "0.8.0",
-  "repositoryName": "Madara Generic (0.8)",
-  "description": "Madara Generic for 0.8!",
+  "repositoryName": "Hentai2Read (0.8)",
+  "description": "Hentai2Read for 0.8!",
   "main": "index.js",
   "scripts": {
     "bundle": "paperback bundle",
@@ -12,12 +12,12 @@
     "type": "git",
     "url": "git+https://github.com/TheNetsky/extensions-generic-0.8.git"
   },
-  "author": "Netsky",
+  "author": "rzmeu",
   "license": "GPL-3.0-or-later",
   "bugs": {
-    "url": "https://github.com/TheNetsky/extensions-generic-0.8/issues"
+    "url": "https://github.com/rzmeu/extensions-generic-0.8/issues"
   },
-  "homepage": "https://thenetsky.github.io/extensions-generic-0.8",
+  "homepage": "https://rzmeu.github.io/extensions-generic-0.8",
   "devDependencies": {
     "@types/cheerio": "^0.22.21",
     "@typescript-eslint/eslint-plugin": "^4.25.0",
