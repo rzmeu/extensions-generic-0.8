@@ -1,25 +1,29 @@
 import entities = require('entities')
 import {Chapter, ChapterDetails, PagedResults, SourceManga, Tag, TagSection} from "@paperback/types";
 import {PartialSourceManga} from "@paperback/types/src/generated/_exports";
+import * as cheerio from 'cheerio';
 
 export class Hentai2ReadParser {
-    cheerio: CheerioAPI;
     domain: string
 
-    constructor(cheerio: CheerioAPI, domain: string) {
-        this.cheerio = cheerio
+    constructor(domain: string) {
         this.domain = domain
     }
 
     parsePagedResult = (data: string| undefined, page: number): PagedResults => {
         const mangaTiles: PartialSourceManga[] = []
-        const $ = this.cheerio.load(data!)
-
+        const $ = cheerio.load(data!)
+        let totalMangas = 48;
 
         for(const obj of $('div.row.book-grid > div.col-xs-6.col-sm-4.col-md-3.col-xl-2').toArray()) {
-            const id = $('a.title', obj).attr('href')!.replace(this.domain, '').replaceAll('/', '')
-            const image = $('picture>img', obj).attr('data-src')!.replace('/cdn-cgi/image/format=auto/', '')
+            const id = $('a.title', obj).attr('href')?.replace(this.domain, '')?.replaceAll('/', '')
+            const image = $('picture>img', obj).attr('src')
             const title = this.decodeHTMLEntity($('a.title > span.title-text', obj).text())
+
+            if(image === undefined || id === undefined) {
+                totalMangas--;
+                continue;
+            }
 
             mangaTiles.push(App.createPartialSourceManga({
                 mangaId: id,
@@ -29,7 +33,7 @@ export class Hentai2ReadParser {
         }
 
         let mData
-        if (mangaTiles.length < 48) {
+        if (mangaTiles.length < totalMangas) {
             mData = undefined
         } else {
             mData = {nextPage: page + 1}
@@ -47,7 +51,7 @@ export class Hentai2ReadParser {
 
     parseMangaDetails(data: string | undefined, mangaId: string, source: any): SourceManga {
         const titles: string[] = []
-        const $ = this.cheerio.load(data!)
+        const $ = cheerio.load(data!)
 
         titles.push(this.decodeHTMLEntity($('h3.block-title > a').text()))
         //
@@ -81,7 +85,7 @@ export class Hentai2ReadParser {
     }
 
     parseChapters(data: string | undefined, mangaId: string): Chapter[] {
-        const $ = this.cheerio.load(data!)
+        const $ = cheerio.load(data!)
 
         const chapters: Chapter[] = []
         const langCode = "ENG"
@@ -142,7 +146,7 @@ export class Hentai2ReadParser {
     }
 
     async parseChapterDetails(data: string | undefined, mangaId: string, chapterId: string): Promise<ChapterDetails> {
-        const $ = this.cheerio.load(data!)
+        const $ = cheerio.load(data!)
         let images = []
 
         for (const scriptObj of $('script').toArray()) {

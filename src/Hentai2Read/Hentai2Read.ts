@@ -32,21 +32,23 @@ export const Hentai2ReadInfo: SourceInfo = {
 }
 
 export class Hentai2Read implements Searchable, MangaProviding, ChapterProviding {
+    cloudflare_domain: boolean = true
+
     readonly requestManager = App.createRequestManager({
         requestsPerSecond: 5,
         requestTimeout: 15000
     });
 
-    constructor(private cheerio: CheerioAPI) { }
+    constructor() {}
 
-    parser = new Hentai2ReadParser(this.cheerio, DOMAIN)
+    parser = new Hentai2ReadParser(DOMAIN)
 
     async getHomePageSections(sectionCallback: (section: HomeSection) => void): Promise<void> {
         const section1 = App.createHomeSection({id: 'latest', title: 'Latest', type: 'singleRowNormal', containsMoreItems: true})
         const section2 = App.createHomeSection({id: 'popular', title: 'Popular', type: 'singleRowNormal', containsMoreItems: true})
-        const section3 = App.createHomeSection({id: 'trending', title: 'Trending', type: 'singleRowNormal', containsMoreItems: true})
+        //const section3 = App.createHomeSection({id: 'trending', title: 'Trending', type: 'singleRowNormal', containsMoreItems: true})
         const section4 = App.createHomeSection({id: 'top-rated', title: 'Top Rated', type: 'singleRowNormal', containsMoreItems: true})
-        const sections = [section1, section2, section3, section4]
+        const sections = [section1, section2, section4]
 
         const promises: Promise<void>[] = []
         for(const section of sections) {
@@ -66,7 +68,6 @@ export class Hentai2Read implements Searchable, MangaProviding, ChapterProviding
 
     async getViewMoreItems(homepageSectionId: string, metadata: any): Promise<PagedResults> {
         const page: number = metadata?.nextPage || 1
-
         let url = ''
 
         switch (homepageSectionId) {
@@ -151,8 +152,7 @@ export class Hentai2Read implements Searchable, MangaProviding, ChapterProviding
             jsonQ = `a:10:{s:7:"nme_opr";s:1:"1";s:3:"nme";s:0:"";s:7:"ats_opr";s:1:"1";s:3:"ats";s:0:"";s:7:"chr_opr";s:1:"1";s:3:"chr";s:0:"";s:3:"tag";a:3:{s:3:"inc";${tagQuery}s:3:"exc";N;s:3:"mde";s:3:"and";}s:11:"rls_yer_opr";s:1:"0";s:7:"rls_yer";s:0:"";s:3:"sts";s:1:"0";}`
         }
 
-        const base64 = Buffer.from(jsonQ).toString('base64')
-
+        const base64 = Base64.encode(jsonQ);
 
         const url = `${DOMAIN}/hentai-list/advanced-search/${base64}/all/last-added/${page}`
 
@@ -165,7 +165,6 @@ export class Hentai2Read implements Searchable, MangaProviding, ChapterProviding
 
         return Promise.resolve(this.parser.parsePagedResult(response.data, page));
     }
-
 
     async getSearchTags(): Promise<TagSection[]> {
         return Promise.resolve(this.parser.getTags());
@@ -180,4 +179,76 @@ export class Hentai2Read implements Searchable, MangaProviding, ChapterProviding
             throw new Error(`CLOUDFLARE BYPASS ERROR:\nPlease go to Settings > Sources > ${DOMAIN} and press Cloudflare Bypass`)
         }
     }
+
+    async getCloudflareBypassRequestAsync(): Promise<Request> {
+        // @ts-ignore
+        return App.createRequest({
+            url: DOMAIN,
+            method: 'GET',
+            headers: {
+                'referer': `${DOMAIN}/`,
+                'user-agent': await this.requestManager.getDefaultUserAgent()
+            }
+        })
+    }
+
+}
+
+// @ts-ignore
+// @ts-ignore
+let Base64 = {
+    _keyStr: "ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+        "abcdefghijklmnopqrstuvwxyz0123456789+/=",
+    encode: function (e) {
+        let t = "";
+        let n, r, i, s, o, u, a;
+        let f = 0;
+        e = Base64._utf8_encode(e);
+        while (f < e.length) {
+            n = e.charCodeAt(f++);
+            r = e.charCodeAt(f++);
+            i = e.charCodeAt(f++);
+            s = n >> 2;
+            o = (n & 3) << 4 | r >> 4;
+            u = (r & 15) << 2 | i >> 6;
+            a = i & 63;
+            if (isNaN(r)) {
+                u = a = 64
+            } else if (isNaN(i)) {
+                a = 64
+            }
+            t = t +
+                this._keyStr.charAt(s) +
+                this._keyStr.charAt(o) +
+                this._keyStr.charAt(u) +
+                this._keyStr.charAt(a)
+        }
+        return t
+    },
+    _utf8_encode: function (e) {
+        e = e.replace(/\r\n/g, "\n");
+        let t = "";
+        for (let n = 0; n < e.length; n++) {
+            let r = e.charCodeAt(n);
+            if (r < 128) {
+                t += String.fromCharCode(r)
+            } else if (r > 127 && r < 2048) {
+                t +=
+                    String.fromCharCode(r >> 6 | 192);
+                t +=
+                    String.fromCharCode(r & 63 | 128)
+            } else {
+                t +=
+                    String.fromCharCode(r >> 12 | 224);
+                t +=
+                    String.fromCharCode(r >> 6 & 63 | 128);
+                t +=
+                    String.fromCharCode(r & 63 | 128)
+            }
+        }
+        return t
+    },
+
+
+
 }
