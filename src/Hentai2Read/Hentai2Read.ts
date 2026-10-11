@@ -26,7 +26,7 @@ export const Hentai2ReadInfo: SourceInfo = {
             type: BadgeColor.YELLOW
         }
     ],
-    version: '1.7',
+    version: '1.8',
     websiteBaseURL: 'https://github.com/rzmeu/extensions-generic',
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.SETTINGS_UI | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
 }

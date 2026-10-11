@@ -93,7 +93,7 @@ export class Hentai2ReadParser {
         const props = this.getPageProps($, 'Book/Show')
 
         if (Array.isArray(props?.chapters)) {
-            return props.chapters.map((chapter: any, index: number) => App.createChapter({
+            return props.chapters.slice().reverse().map((chapter: any, index: number) => App.createChapter({
                 id: String(chapter.id),
                 sortingIndex: index,
                 name: this.decodeHTMLEntity(chapter.title || `Chapter ${chapter.number}`),
@@ -130,6 +130,8 @@ export class Hentai2ReadParser {
             index++;
         }
 
+        chapters.reverse()
+        chapters.forEach((chapter, chapterIndex) => chapter.sortingIndex = chapterIndex)
         return chapters
     }
 
