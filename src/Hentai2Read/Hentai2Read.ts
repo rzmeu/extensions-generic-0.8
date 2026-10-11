@@ -26,7 +26,7 @@ export const Hentai2ReadInfo: SourceInfo = {
             type: BadgeColor.YELLOW
         }
     ],
-    version: '1.8',
+    version: '1.9',
     websiteBaseURL: 'https://github.com/rzmeu/extensions-generic',
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.SETTINGS_UI | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
 }
@@ -135,17 +135,33 @@ export class Hentai2Read implements Searchable, MangaProviding, ChapterProviding
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page = metadata?.nextPage || 1
-        const includedTagIds = (query.includedTags || []).map(tag => tag.id)
-        const excludedTagIds = (query.excludedTags || []).map(tag => tag.id)
+        const includedTags = query.includedTags || []
+        const excludedTags = query.excludedTags || []
 
-        const parameters: string[] = []
-        if (query.title) parameters.push(`q=${encodeURIComponent(query.title)}`)
-        if (includedTagIds.length) parameters.push(`with=${includedTagIds.map(encodeURIComponent).join(',')}`)
-        if (excludedTagIds.length) parameters.push(`without=${excludedTagIds.map(encodeURIComponent).join(',')}`)
-        if (query.includeOperator?.toLowerCase() === 'or') parameters.push('match=any')
-        parameters.push('sort=latest')
-        if (page > 1) parameters.push(`page=${page}`)
-        const url = `${DOMAIN}/search?${parameters.join('&')}`
+        let url: string
+        if (!query.title && includedTags.length === 1 && excludedTags.length === 0) {
+            const tag = includedTags[0]!
+            const slug = tag.label
+                .normalize('NFKD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+            const tagPath = `${DOMAIN}/content/${encodeURIComponent(tag.id)}-${slug}`
+            url = page === 1 ? tagPath : `${tagPath}/page-${page}`
+        } else {
+            const includedTagIds = includedTags.map(tag => tag.id)
+            const excludedTagIds = excludedTags.map(tag => tag.id)
+
+            const parameters: string[] = []
+            if (query.title) parameters.push(`q=${encodeURIComponent(query.title)}`)
+            if (includedTagIds.length) parameters.push(`with=${includedTagIds.map(encodeURIComponent).join(',')}`)
+            if (excludedTagIds.length) parameters.push(`without=${excludedTagIds.map(encodeURIComponent).join(',')}`)
+            if (query.includeOperator?.toLowerCase() === 'or') parameters.push('match=any')
+            parameters.push('sort=latest')
+            if (page > 1) parameters.push(`page=${page}`)
+            url = `${DOMAIN}/search?${parameters.join('&')}`
+        }
 
         const request = App.createRequest({
             url: url,
@@ -153,6 +169,7 @@ export class Hentai2Read implements Searchable, MangaProviding, ChapterProviding
         })
 
         const response = await this.requestManager.schedule(request, 1)
+        this.CloudFlareError(response.status)
 
         return Promise.resolve(this.parser.parsePagedResult(response.data, page));
     }

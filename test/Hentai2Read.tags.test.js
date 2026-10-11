@@ -21,7 +21,7 @@ global.App = {
             scheduledUrls.push(request.url)
             return {
                 status: 200,
-                data: request.url.includes('with=422') ? darkSkinSearchResponse : '<html></html>'
+                data: request.url.includes('/content/422-dark-skin') ? darkSkinSearchResponse : '<html></html>'
             }
         }
     }),
@@ -57,7 +57,7 @@ describe('Hentai2Read content-tag search', () => {
         }, {})
 
         assert.deepEqual(scheduledUrls, [
-            'https://hentai2read.com/search?with=422&sort=latest'
+            'https://hentai2read.com/content/422-dark-skin'
         ])
         assert.equal(page.results.length, 1)
         assert.deepEqual(page.results[0], {
@@ -65,6 +65,51 @@ describe('Hentai2Read content-tag search', () => {
             image: 'https://hentaicdn.com/hentai/cover/_S13088.jpg',
             title: 'Popuni Kei Joshi Panic!'
         })
+    })
+
+    it('uses the content tag pagination route', async () => {
+        const source = new Hentai2Read()
+
+        await source.getSearchResults({
+            title: '',
+            includedTags: [{id: '113', label: 'Glasses'}],
+            excludedTags: []
+        }, {nextPage: 2})
+
+        assert.deepEqual(scheduledUrls, [
+            'https://hentai2read.com/content/113-glasses/page-2'
+        ])
+    })
+
+    it('keeps title searches on the search route', async () => {
+        const source = new Hentai2Read()
+
+        await source.getSearchResults({
+            title: 'Popuni Kei Joshi Panic!',
+            includedTags: [],
+            excludedTags: []
+        }, {})
+
+        assert.deepEqual(scheduledUrls, [
+            'https://hentai2read.com/search?q=Popuni%20Kei%20Joshi%20Panic!&sort=latest'
+        ])
+    })
+
+    it('keeps advanced multi-tag searches on the search route', async () => {
+        const source = new Hentai2Read()
+
+        await source.getSearchResults({
+            title: '',
+            includedTags: [
+                {id: '113', label: 'Glasses'},
+                {id: '422', label: 'Dark Skin'}
+            ],
+            excludedTags: []
+        }, {})
+
+        assert.deepEqual(scheduledUrls, [
+            'https://hentai2read.com/search?with=113,422&sort=latest'
+        ])
     })
 })
 
