@@ -91,7 +91,21 @@ describe('Hentai2Read content-tag search', () => {
         }, {})
 
         assert.deepEqual(scheduledUrls, [
-            'https://hentai2read.com/search?q=Popuni%20Kei%20Joshi%20Panic!&sort=latest'
+            'https://hentai2read.com/search?q=Popuni%20Kei%20Joshi%20Panic!'
+        ])
+    })
+
+    it('uses the website pagination route for title searches', async () => {
+        const source = new Hentai2Read()
+
+        await source.getSearchResults({
+            title: 'girl',
+            includedTags: [],
+            excludedTags: []
+        }, {nextPage: 2})
+
+        assert.deepEqual(scheduledUrls, [
+            'https://hentai2read.com/search?q=girl&page=2'
         ])
     })
 

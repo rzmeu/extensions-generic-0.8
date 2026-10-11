@@ -26,7 +26,7 @@ export const Hentai2ReadInfo: SourceInfo = {
             type: BadgeColor.YELLOW
         }
     ],
-    version: '1.9',
+    version: '2.0',
     websiteBaseURL: 'https://github.com/rzmeu/extensions-generic',
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.SETTINGS_UI | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
 }
@@ -152,13 +152,14 @@ export class Hentai2Read implements Searchable, MangaProviding, ChapterProviding
         } else {
             const includedTagIds = includedTags.map(tag => tag.id)
             const excludedTagIds = excludedTags.map(tag => tag.id)
+            const isSimpleTitleSearch = Boolean(query.title) && includedTagIds.length === 0 && excludedTagIds.length === 0
 
             const parameters: string[] = []
             if (query.title) parameters.push(`q=${encodeURIComponent(query.title)}`)
             if (includedTagIds.length) parameters.push(`with=${includedTagIds.map(encodeURIComponent).join(',')}`)
             if (excludedTagIds.length) parameters.push(`without=${excludedTagIds.map(encodeURIComponent).join(',')}`)
             if (query.includeOperator?.toLowerCase() === 'or') parameters.push('match=any')
-            parameters.push('sort=latest')
+            if (!isSimpleTitleSearch) parameters.push('sort=latest')
             if (page > 1) parameters.push(`page=${page}`)
             url = `${DOMAIN}/search?${parameters.join('&')}`
         }
