@@ -26,7 +26,7 @@ export const Hentai2ReadInfo: SourceInfo = {
             type: BadgeColor.YELLOW
         }
     ],
-    version: '1.0',
+    version: '1.5',
     websiteBaseURL: 'https://github.com/rzmeu/extensions-generic',
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.SETTINGS_UI | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
 }
@@ -72,16 +72,16 @@ export class Hentai2Read implements Searchable, MangaProviding, ChapterProviding
 
         switch (homepageSectionId) {
             case 'latest':
-                url = `${DOMAIN}/hentai-list/all/any/all/last-added/${page}`
+                url = page === 1 ? `${DOMAIN}/browse` : `${DOMAIN}/browse/page-${page}`
                 break
             case 'popular':
-                url = `${DOMAIN}/hentai-list/all/any/all/most-popular/${page}`
+                url = page === 1 ? `${DOMAIN}/browse/most-viewed` : `${DOMAIN}/browse/most-viewed/page-${page}`
                 break
             case 'trending':
                 url = `${DOMAIN}/hentai-list/all/any/all/trending/${page}`
                 break
             case 'top-rated':
-                url = `${DOMAIN}/hentai-list/all/any/all/top-rating/${page}`
+                url = page === 1 ? `${DOMAIN}/browse/top-rated` : `${DOMAIN}/browse/top-rated/page-${page}`
                 break
         }
 
@@ -98,7 +98,7 @@ export class Hentai2Read implements Searchable, MangaProviding, ChapterProviding
 
     async getChapterDetails(mangaId: string, chapterId: string): Promise<ChapterDetails> {
         const request = App.createRequest({
-            url: `${DOMAIN}/${mangaId}/${chapterId}`,
+            url: `${DOMAIN}/reader/${mangaId.replace(/^(original|doujinshi|imageset)\//, '')}/${chapterId}/page-1`,
             method: 'GET',
         })
 
@@ -135,26 +135,32 @@ export class Hentai2Read implements Searchable, MangaProviding, ChapterProviding
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page = metadata?.nextPage || 1
-
-        let jsonQ = ''
-
-        if(query.title) {
-            jsonQ = `a:10:{s:7:"nme_opr";s:1:"0";s:3:"nme";s:${query.title.length}:"${query.title}";s:7:"ats_opr";s:1:"1";s:3:"ats";s:0:"";s:7:"chr_opr";s:1:"1";s:3:"chr";s:0:"";s:3:"tag";a:3:{s:3:"inc";N;s:3:"exc";N;s:3:"mde";s:2:"or";}s:11:"rls_yer_opr";s:1:"0";s:7:"rls_yer";s:0:"";s:3:"sts";s:1:"0";}`
-        } else if(query.includedTags) {
-            let tagQuery = `a:${query.includedTags.length}:{`
-
-            for(let i = 0; i < query.includedTags.length; i++) {
-                const tagId = query.includedTags[i]!.id + ''
-                tagQuery += `i:${i};s:${tagId.length}:"${tagId}";`
-            }
-            tagQuery += '}'
-
-            jsonQ = `a:10:{s:7:"nme_opr";s:1:"1";s:3:"nme";s:0:"";s:7:"ats_opr";s:1:"1";s:3:"ats";s:0:"";s:7:"chr_opr";s:1:"1";s:3:"chr";s:0:"";s:3:"tag";a:3:{s:3:"inc";${tagQuery}s:3:"exc";N;s:3:"mde";s:3:"and";}s:11:"rls_yer_opr";s:1:"0";s:7:"rls_yer";s:0:"";s:3:"sts";s:1:"0";}`
+        const resolveTagIds = async (tags: {id: string, label: string}[]): Promise<string[]> => {
+            return Promise.all(tags.map(async tag => {
+                try {
+                    const request = App.createRequest({
+                        url: `${DOMAIN}/tags?q=${encodeURIComponent(tag.label)}`,
+                        method: 'GET'
+                    })
+                    const response = await this.requestManager.schedule(request, 1)
+                    const liveTags = this.parser.parseTags(response.data)[0]?.tags || []
+                    return liveTags.find(liveTag => liveTag.label.toLowerCase() === tag.label.toLowerCase())?.id || tag.id
+                } catch (_) {
+                    return tag.id
+                }
+            }))
         }
+        const includedTagIds = await resolveTagIds(query.includedTags || [])
+        const excludedTagIds = await resolveTagIds(query.excludedTags || [])
 
-        const base64 = Base64.encode(jsonQ);
-
-        const url = `${DOMAIN}/hentai-list/advanced-search/${base64}/all/last-added/${page}`
+        const parameters: string[] = []
+        if (query.title) parameters.push(`q=${encodeURIComponent(query.title)}`)
+        if (includedTagIds.length) parameters.push(`with=${includedTagIds.map(encodeURIComponent).join(',')}`)
+        if (excludedTagIds.length) parameters.push(`without=${excludedTagIds.map(encodeURIComponent).join(',')}`)
+        if (query.includeOperator?.toLowerCase() === 'or') parameters.push('match=any')
+        parameters.push('sort=latest')
+        if (page > 1) parameters.push(`page=${page}`)
+        const url = `${DOMAIN}/search?${parameters.join('&')}`
 
         const request = App.createRequest({
             url: url,
@@ -167,7 +173,18 @@ export class Hentai2Read implements Searchable, MangaProviding, ChapterProviding
     }
 
     async getSearchTags(): Promise<TagSection[]> {
-        return Promise.resolve(this.parser.getTags());
+        try {
+            const request = App.createRequest({
+                url: `${DOMAIN}/tags`,
+                method: 'GET'
+            })
+            const response = await this.requestManager.schedule(request, 1)
+            this.CloudFlareError(response.status)
+            const sections = this.parser.parseTags(response.data)
+            if (sections[0]?.tags.length) return sections
+        } catch (_) {}
+
+        return this.parser.getTags()
     }
 
     supportsSearchOperators(): Promise<boolean> {
@@ -191,64 +208,5 @@ export class Hentai2Read implements Searchable, MangaProviding, ChapterProviding
             }
         })
     }
-
-}
-
-// @ts-ignore
-// @ts-ignore
-let Base64 = {
-    _keyStr: "ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
-        "abcdefghijklmnopqrstuvwxyz0123456789+/=",
-    encode: function (e) {
-        let t = "";
-        let n, r, i, s, o, u, a;
-        let f = 0;
-        e = Base64._utf8_encode(e);
-        while (f < e.length) {
-            n = e.charCodeAt(f++);
-            r = e.charCodeAt(f++);
-            i = e.charCodeAt(f++);
-            s = n >> 2;
-            o = (n & 3) << 4 | r >> 4;
-            u = (r & 15) << 2 | i >> 6;
-            a = i & 63;
-            if (isNaN(r)) {
-                u = a = 64
-            } else if (isNaN(i)) {
-                a = 64
-            }
-            t = t +
-                this._keyStr.charAt(s) +
-                this._keyStr.charAt(o) +
-                this._keyStr.charAt(u) +
-                this._keyStr.charAt(a)
-        }
-        return t
-    },
-    _utf8_encode: function (e) {
-        e = e.replace(/\r\n/g, "\n");
-        let t = "";
-        for (let n = 0; n < e.length; n++) {
-            let r = e.charCodeAt(n);
-            if (r < 128) {
-                t += String.fromCharCode(r)
-            } else if (r > 127 && r < 2048) {
-                t +=
-                    String.fromCharCode(r >> 6 | 192);
-                t +=
-                    String.fromCharCode(r & 63 | 128)
-            } else {
-                t +=
-                    String.fromCharCode(r >> 12 | 224);
-                t +=
-                    String.fromCharCode(r >> 6 & 63 | 128);
-                t +=
-                    String.fromCharCode(r & 63 | 128)
-            }
-        }
-        return t
-    },
-
-
 
 }

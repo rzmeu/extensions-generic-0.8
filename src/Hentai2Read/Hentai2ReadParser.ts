@@ -13,17 +13,13 @@ export class Hentai2ReadParser {
     parsePagedResult = (data: string| undefined, page: number): PagedResults => {
         const mangaTiles: PartialSourceManga[] = []
         const $ = cheerio.load(data!)
-        let totalMangas = 48;
+        for(const obj of $('article[data-card][data-book]').toArray()) {
+            const link = $('a[href^="/original/"], a[href^="/doujinshi/"], a[href^="/imageset/"]', obj).first()
+            const id = link.attr('href')?.replace(/^\//, '')
+            const image = $('img', obj).first().attr('src')
+            const title = this.decodeHTMLEntity($('h3', obj).first().text().trim() || $('img', obj).first().attr('alt') || '')
 
-        for(const obj of $('div.row.book-grid > div.col-xs-6.col-sm-4.col-md-3.col-xl-2').toArray()) {
-            const id = $('a.title', obj).attr('href')?.replace(this.domain, '')?.replaceAll('/', '')
-            const image = $('picture>img', obj).attr('src')
-            const title = this.decodeHTMLEntity($('a.title > span.title-text', obj).text())
-
-            if(image === undefined || id === undefined) {
-                totalMangas--;
-                continue;
-            }
+            if(!image || !id || !title) continue
 
             mangaTiles.push(App.createPartialSourceManga({
                 mangaId: id,
@@ -32,16 +28,11 @@ export class Hentai2ReadParser {
             }))
         }
 
-        let mData
-        if (mangaTiles.length < totalMangas) {
-            mData = undefined
-        } else {
-            mData = {nextPage: page + 1}
-        }
+        const hasNextPage = $(`a[href$="page-${page + 1}"], a[href*="page=${page + 1}"]`).length > 0
 
         return App.createPagedResults({
             results: mangaTiles,
-            metadata: mData
+            metadata: hasNextPage ? {nextPage: page + 1} : undefined
         })
     }
 
@@ -49,23 +40,33 @@ export class Hentai2ReadParser {
         return entities.decodeHTML(str)
     }
 
+    private getPageProps($: cheerio.CheerioAPI, component: string): any | undefined {
+        for (const scriptObj of $('script').toArray()) {
+            const script = $(scriptObj).html()?.trim()
+            if (!script?.startsWith('{')) continue
+            try {
+                const pageData = JSON.parse(script)
+                if (pageData.component === component) return pageData.props
+            } catch (_) {}
+        }
+        return undefined
+    }
+
     parseMangaDetails(data: string | undefined, mangaId: string, source: any): SourceManga {
         const titles: string[] = []
         const $ = cheerio.load(data!)
+        const props = this.getPageProps($, 'Book/Show')
+        const book = props?.book
 
-        titles.push(this.decodeHTMLEntity($('h3.block-title > a').text()))
-        //
-        const image = $('div.img-container img').attr('src')
+        titles.push(this.decodeHTMLEntity(book?.title || $('main h1').first().text().trim()))
+        const image = book?.cover || $('main img[alt^="Cover of "]').first().attr('src')
         //
         const arrayTags: Tag[] = []
         //
-        const tagsParent = $('ul.list.list-simple-mini > li > b:contains(Content)').parent()
-        const tags = this.getTags()[0]!.tags
-
-        for (const tag of $('a', tagsParent).toArray()) {
-            const label = $(tag).text().trim()
-            const optionalTag = tags.find(value => value.label === label)
-            const id = (optionalTag != undefined ? optionalTag.id : encodeURI(label))
+        const contentTags = book?.tags?.filter((tag: any) => tag.type === 'content') || []
+        for (const tag of contentTags) {
+            const label = tag.name
+            const id = String(tag.id)
 
             if (!id || !label) continue
             arrayTags.push({ id: id, label: label })
@@ -77,38 +78,51 @@ export class Hentai2ReadParser {
             mangaInfo: App.createMangaInfo({
                 titles: titles,
                 image: image ? image : source.fallbackImage,
-                status: 'Completed',
+                status: book?.status?.label || ($('main a[href$="/ongoing"]').length ? 'Ongoing' : 'Completed'),
                 tags: tagSections,
-                desc: '',
+                desc: book?.description || book?.facts || '',
             })
         })
     }
 
-    parseChapters(data: string | undefined, mangaId: string): Chapter[] {
+    parseChapters(data: string | undefined, _mangaId: string): Chapter[] {
         const $ = cheerio.load(data!)
 
         const chapters: Chapter[] = []
         const langCode = "ENG"
+        const props = this.getPageProps($, 'Book/Show')
 
-        var index = 0;
-        for(const obj of $('ul.nav-chapters > li').toArray()) {
-            const chapterId = $('div.media > a', obj).attr('href')!.replace(this.domain, '').replace(mangaId, '').replaceAll('/', '')
-            const chapterNameText = $('div.media > a', obj).text()
-            const chapterNameCleanup = chapterNameText.replaceAll('\n', '')
-            const chapterNameWithoutNumber = chapterNameCleanup.replace(chapterId + ' - ', '')
-            const chapterNameArr = chapterNameWithoutNumber.split(' uploaded by ')
-            const chapterName = this.decodeHTMLEntity(chapterNameArr[0]!)
+        if (Array.isArray(props?.chapters)) {
+            return props.chapters.map((chapter: any, index: number) => App.createChapter({
+                id: String(chapter.id),
+                sortingIndex: index,
+                name: this.decodeHTMLEntity(chapter.title || `Chapter ${chapter.number}`),
+                langCode: langCode,
+                chapNum: parseFloat(chapter.number) || index + 1,
+                time: chapter.date ? new Date(chapter.date) : new Date(),
+                volume: 0,
+                group: ''
+            }))
+        }
 
-            const uploadedDateText = chapterNameArr[1]!.split(' about ')[1]!.replace(' ago', '')
-
-
+        let index = 0;
+        const seen = new Set<string>()
+        for(const link of $('main a[href^="/reader/"][href$="/page-1"]').toArray()) {
+            const href = $(link).attr('href') || ''
+            const chapterId = href.match(/\/(\d+)\/page-1$/)?.[1]
+            if (!chapterId || seen.has(chapterId)) continue
+            seen.add(chapterId)
+            const row = $(link).closest('li, article, div').first()
+            const chapterName = this.decodeHTMLEntity($(link).text().trim())
+            const chapterNumber = parseFloat(row.find('[class*="tabular-nums"]').first().text().trim()) || parseFloat(chapterName.match(/(?:chapter\s*)?(\d+(?:\.\d+)?)/i)?.[1] || '') || index + 1
+            const dateText = row.find('time').attr('datetime') || row.find('time').text().trim()
             chapters.push(App.createChapter({
                 id: chapterId,
                 sortingIndex: index,
                 name: chapterName,
                 langCode: langCode,
-                chapNum: parseInt(chapterId),
-                time: this.parseChapterUploadDate(uploadedDateText),
+                chapNum: chapterNumber,
+                time: dateText ? new Date(dateText) : new Date(),
                 volume: 0,
                 group: ''
             }))
@@ -147,22 +161,32 @@ export class Hentai2ReadParser {
 
     async parseChapterDetails(data: string | undefined, mangaId: string, chapterId: string): Promise<ChapterDetails> {
         const $ = cheerio.load(data!)
-        let images = []
-
-        for (const scriptObj of $('script').toArray()) {
-            if($(scriptObj).html() != undefined && $(scriptObj).html()!.includes('var gData')) {
-                const gData = $(scriptObj).html()
-                const gDataClean: string = gData?.replace(/[\s\S]*var gData = /, '').replace(/;/g, '').replace(/'/g, '"') || ''
-                const gDataJson = JSON.parse(gDataClean)
-                images = gDataJson.images.map((el: string) => `https://cdn-ngocok-static.sinxdr.workers.dev/hentai${el}`)
-            }
-        }
+        let images: string[] = []
+        const props = this.getPageProps($, 'Reader/Show')
+        if (Array.isArray(props?.images)) images = props.images
 
         return App.createChapterDetails({
             id: chapterId,
             mangaId: mangaId,
             pages: images
         })
+    }
+
+    parseTags(data: string | undefined): TagSection[] {
+        const $ = cheerio.load(data!)
+        const tags: Tag[] = []
+        const seen = new Set<string>()
+
+        for (const link of $('a[href^="/content/"], a[href^="/category/"]').toArray()) {
+            const href = $(link).attr('href') || ''
+            const id = href.match(/^\/(?:content|category)\/(\d+)/)?.[1]
+            const label = $(link).text().trim()
+            if (!id || !label || seen.has(id)) continue
+            seen.add(id)
+            tags.push(App.createTag({id, label: this.decodeHTMLEntity(label)}))
+        }
+
+        return [App.createTagSection({id: '0', label: 'genres', tags})]
     }
 
     getTags(): TagSection[] {
