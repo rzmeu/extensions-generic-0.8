@@ -26,7 +26,7 @@ export const Hentai2ReadInfo: SourceInfo = {
             type: BadgeColor.YELLOW
         }
     ],
-    version: '1.5',
+    version: '1.7',
     websiteBaseURL: 'https://github.com/rzmeu/extensions-generic',
     intents: SourceIntents.MANGA_CHAPTERS | SourceIntents.HOMEPAGE_SECTIONS | SourceIntents.SETTINGS_UI | SourceIntents.CLOUDFLARE_BYPASS_REQUIRED
 }
@@ -135,23 +135,8 @@ export class Hentai2Read implements Searchable, MangaProviding, ChapterProviding
 
     async getSearchResults(query: SearchRequest, metadata: any): Promise<PagedResults> {
         const page = metadata?.nextPage || 1
-        const resolveTagIds = async (tags: {id: string, label: string}[]): Promise<string[]> => {
-            return Promise.all(tags.map(async tag => {
-                try {
-                    const request = App.createRequest({
-                        url: `${DOMAIN}/tags?q=${encodeURIComponent(tag.label)}`,
-                        method: 'GET'
-                    })
-                    const response = await this.requestManager.schedule(request, 1)
-                    const liveTags = this.parser.parseTags(response.data)[0]?.tags || []
-                    return liveTags.find(liveTag => liveTag.label.toLowerCase() === tag.label.toLowerCase())?.id || tag.id
-                } catch (_) {
-                    return tag.id
-                }
-            }))
-        }
-        const includedTagIds = await resolveTagIds(query.includedTags || [])
-        const excludedTagIds = await resolveTagIds(query.excludedTags || [])
+        const includedTagIds = (query.includedTags || []).map(tag => tag.id)
+        const excludedTagIds = (query.excludedTags || []).map(tag => tag.id)
 
         const parameters: string[] = []
         if (query.title) parameters.push(`q=${encodeURIComponent(query.title)}`)
@@ -172,19 +157,8 @@ export class Hentai2Read implements Searchable, MangaProviding, ChapterProviding
         return Promise.resolve(this.parser.parsePagedResult(response.data, page));
     }
 
-    async getSearchTags(): Promise<TagSection[]> {
-        try {
-            const request = App.createRequest({
-                url: `${DOMAIN}/tags`,
-                method: 'GET'
-            })
-            const response = await this.requestManager.schedule(request, 1)
-            this.CloudFlareError(response.status)
-            const sections = this.parser.parseTags(response.data)
-            if (sections[0]?.tags.length) return sections
-        } catch (_) {}
-
-        return this.parser.getTags()
+    getSearchTags(): Promise<TagSection[]> {
+        return Promise.resolve(this.parser.getTags())
     }
 
     supportsSearchOperators(): Promise<boolean> {
